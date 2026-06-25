@@ -1,0 +1,6 @@
+{
+  "name": "NexusAI Coding Assistant",
+  "description": "An intelligent, interactive coding companion capable of generating, explaining, debugging, optimizing, reviewing, and documenting source code across multiple languages.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
