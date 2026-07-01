@@ -600,32 +600,32 @@ export default function App() {
       <div className="absolute top-1/2 right-1/4 w-96 h-96 bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none"></div>
 
       {/* COMPANION MAIN NAVBAR */}
-      <header className="border-b border-slate-755 bg-[#1E293B]/90 backdrop-blur-md sticky top-0 z-50 px-4 py-4 sm:px-6">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <header className="border-b border-slate-800 bg-[#1E293B]/90 backdrop-blur-md sticky top-0 z-50 px-4 py-3 sm:px-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           
-          {/* Glowing Badged Logo */}
-          <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-              <Code2 className="text-white" size={20} strokeWidth={2.5} />
+          {/* Logo */}
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-md">
+              <Code2 className="text-white" size={16} />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h1 className="text-base font-black text-white tracking-tight">Nexus<span className="text-indigo-400 font-bold">AI</span></h1>
-                <span className="text-[10px] bg-slate-900 border border-slate-700 text-indigo-400 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-widest font-mono">v2.5</span>
-              </div>
-              <p className="text-[10px] text-slate-400 font-medium">Professional Language, Testing, and Optimization Platform</p>
-            </div>
+            <h1 className="text-sm font-bold text-white tracking-tight">NexusAI Workspace</h1>
           </div>
 
-          {/* Quick Engine Status Indicator */}
-          <div className="flex items-center space-x-3 text-xs">
-            <span className="text-slate-400 font-medium flex items-center space-x-1.5 bg-[#0F172A] px-3 py-1.5 rounded-lg border border-slate-700/60">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="font-mono text-slate-300">gemini-3.5-flash / Py3</span>
-            </span>
+          {/* Actions & Session controls */}
+          <div className="flex items-center space-x-4 text-xs font-sans">
+            <div className="hidden sm:flex items-center space-x-2 text-slate-400 bg-[#0F172A] px-2.5 py-1 rounded border border-slate-700/60 font-mono text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span className="truncate max-w-[120px]" title={loggedInUser || ''}>{loggedInUser}</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="text-slate-400 hover:text-rose-400 font-semibold transition cursor-pointer"
+            >
+              Sign Out
+            </button>
             <button
               onClick={handleResetInputs}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold cursor-pointer transition text-xs shadow-lg shadow-indigo-600/10"
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-550 text-white rounded-lg font-semibold cursor-pointer transition text-xs shadow"
             >
               Clear Workspace
             </button>
@@ -787,8 +787,6 @@ export default function App() {
             onSelect={handleSelectHistory}
             onClear={handleClearHistory}
             onRemoveItem={handleRemoveHistoryItem}
-            currentUser={loggedInUser || ''}
-            onLogout={handleLogout}
           />
 
         </section>
@@ -797,59 +795,69 @@ export default function App() {
         <section className="lg:col-span-12 xl:col-span-7 flex flex-col space-y-4 font-sans">
           
           {/* Output Selector Workspace Tabs */}
-          <div className="flex border-b border-slate-700/60 overflow-x-auto whitespace-nowrap scrollbar-none scroll-smooth">
-            <button
-              onClick={() => setActiveTab('editor')}
-              className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
-                activeTab === 'editor'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              📄 Code Editor
-            </button>
-            <button
-              onClick={() => setActiveTab('explain')}
-              className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
-                activeTab === 'explain'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              📖 Step Explanation
-            </button>
-            <button
-              onClick={() => setActiveTab('review')}
-              className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
-                activeTab === 'review'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              🛠️ Audit & Stats
-            </button>
-            <button
-              onClick={() => setActiveTab('concept')}
-              className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
-                activeTab === 'concept'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              📚 Exercises & Concept
-            </button>
-            <button
-              id="tab-documentation"
-              onClick={() => setActiveTab('readme')}
-              className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
-                activeTab === 'readme'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              📝 Documentation
-            </button>
-          </div>
+          {currentResponse && (
+            <div className="flex border-b border-slate-700/60 overflow-x-auto whitespace-nowrap scrollbar-none scroll-smooth">
+              <button
+                onClick={() => setActiveTab('editor')}
+                className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
+                  activeTab === 'editor'
+                    ? 'border-indigo-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📄 Code Editor
+              </button>
+              {currentResponse.lineByLine && currentResponse.lineByLine.length > 0 && (
+                <button
+                  onClick={() => setActiveTab('explain')}
+                  className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
+                    activeTab === 'explain'
+                      ? 'border-indigo-500 text-white'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  📖 Step Explanation
+                </button>
+              )}
+              {(currentResponse.reviewScore !== undefined || (currentResponse.smells && currentResponse.smells.length > 0) || (currentResponse.recommendations && currentResponse.recommendations.length > 0)) && (
+                <button
+                  onClick={() => setActiveTab('review')}
+                  className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
+                    activeTab === 'review'
+                      ? 'border-indigo-500 text-white'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🛠️ Audit & Stats
+                </button>
+              )}
+              {(currentResponse.conceptTitle || currentResponse.conceptExplanation || (currentResponse.exercises && currentResponse.exercises.length > 0)) && (
+                <button
+                  onClick={() => setActiveTab('concept')}
+                  className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
+                    activeTab === 'concept'
+                      ? 'border-indigo-500 text-white'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  📚 Exercises & Concept
+                </button>
+              )}
+              {currentResponse.readme && (
+                <button
+                  id="tab-documentation"
+                  onClick={() => setActiveTab('readme')}
+                  className={`px-4 py-2.5 text-xs sm:text-sm font-bold tracking-tight outline-none border-b-2 transition duration-200 cursor-pointer ${
+                    activeTab === 'readme'
+                      ? 'border-indigo-500 text-white'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  📝 Documentation
+                </button>
+              )}
+            </div>
+          )}
 
           {/* LOADING SHELL INDICATOR */}
           {isLoading && (

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { History, Trash2, Code2, AlertTriangle, Cpu, FileText, Search, ShieldCheck, User, LogOut } from 'lucide-react';
+import { History, Trash2, Code2, AlertTriangle, Cpu, FileText, Search, ShieldCheck } from 'lucide-react';
 import { HistoryItem, AssistantMode } from '../types';
 
 interface HistorySidebarProps {
@@ -13,8 +13,6 @@ interface HistorySidebarProps {
   onSelect: (item: HistoryItem) => void;
   onClear: () => void;
   onRemoveItem?: (id: string) => void;
-  currentUser: string;
-  onLogout: () => void;
 }
 
 export default function HistorySidebar({
@@ -22,9 +20,7 @@ export default function HistorySidebar({
   selectedId,
   onSelect,
   onClear,
-  onRemoveItem,
-  currentUser,
-  onLogout
+  onRemoveItem
 }: HistorySidebarProps) {
   
   const getModeIcon = (mode: AssistantMode) => {
@@ -78,33 +74,6 @@ export default function HistorySidebar({
             <span className="hidden sm:inline">Clear</span>
           </button>
         )}
-      </div>
-
-      {/* Logged in user details & Sign Out */}
-      <div id="user-profile-card" className="px-4 py-3 bg-[#0F172A]/40 border-b border-slate-700/60 flex flex-col space-y-2 font-sans">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1.5">
-            <User size={12} className="text-indigo-400" />
-            <span>Logged In As</span>
-          </span>
-          <button
-            onClick={onLogout}
-            className="text-[10px] text-rose-450 hover:text-rose-400 font-bold flex items-center space-x-1 cursor-pointer bg-transparent border-none outline-none"
-            title="Sign out of current account"
-          >
-            <LogOut size={11} />
-            <span>Sign Out</span>
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between bg-[#0F172A] border border-slate-750 p-2.5 rounded-lg">
-          <span className="text-xs font-mono text-slate-200 truncate max-w-[150px]" title={currentUser}>
-            {currentUser}
-          </span>
-          <span className="text-[9px] bg-indigo-950/60 border border-indigo-800/30 text-indigo-300 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
-            Secure
-          </span>
-        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[500px]">

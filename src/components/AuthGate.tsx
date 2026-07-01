@@ -77,9 +77,6 @@ export default function AuthGate({ onLoginSuccess }: AuthGateProps) {
           <h1 className="text-2xl font-black text-white tracking-tight">
             Nexus<span className="text-indigo-400 font-bold">AI</span> Workspace
           </h1>
-          <p className="text-xs text-slate-400 mt-2 font-medium">
-            Professional Language, Testing, and Optimization Platform
-          </p>
         </div>
 
         {/* AUTH BOX */}
@@ -202,20 +199,10 @@ export default function AuthGate({ onLoginSuccess }: AuthGateProps) {
           </form>
 
           {/* SECURE CARD METADATA FOOTER */}
-          <div className="mt-6 pt-4 border-t border-slate-700/40 text-center">
-            <span className="inline-flex items-center space-x-1 text-[9px] bg-[#0F172A]/80 border border-slate-750 px-2 py-0.5 rounded-full text-slate-500 font-bold uppercase tracking-wider">
-              <Sparkles size={8} className="text-indigo-400" />
-              <span>TLS Server Side Isolated Database</span>
-            </span>
+          <div className="mt-2 text-center">
           </div>
 
         </div>
-
-        {/* VISUAL PRIVACY DISCLAIMER */}
-        <p className="text-[10px] text-center text-slate-500 mt-6 max-w-sm mx-auto leading-relaxed">
-          Each account's history is encrypted and isolated on the backend server.
-          Users can never access, query, or view data from separate accounts.
-        </p>
 
       </div>
     </div>
