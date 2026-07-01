@@ -22,7 +22,8 @@ import {
   Copy, 
   Download, 
   ArrowRight,
-  Info
+  Info,
+  LogOut
 } from 'lucide-react';
 
 import { AssistantMode, HistoryItem, ActionResponse, ChatMessage } from './types';
@@ -30,6 +31,7 @@ import CodeDisplay from './components/CodeDisplay';
 import HistorySidebar from './components/HistorySidebar';
 import ReviewStats from './components/ReviewStats';
 import ConceptViewer from './components/ConceptViewer';
+import AuthGate from './components/AuthGate';
 
 // Preset lists to satisfy user requirements instantly
 const PRESET_IDE_EXAMPLES = [
@@ -157,6 +159,7 @@ export default function App() {
   const [codeContext, setCodeContext] = useState('');
   const [language, setLanguage] = useState('Python');
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<AssistantMode>('generate');
   
   // History list
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -194,7 +197,21 @@ export default function App() {
     
     const updatedHistoryList = [...history];
     updatedHistoryList[itemIndex] = updatedItem;
-    saveHistoryList(updatedHistoryList);
+    setHistory(updatedHistoryList);
+
+    // Sync optimistic user message to server
+    try {
+      await fetch(`/api/history/${activeItem.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ chatHistory: updatedMessages })
+      });
+    } catch (err) {
+      console.error('Failed to sync chat history to server:', err);
+    }
     
     const originalInput = chatInput;
     setChatInput('');
@@ -204,7 +221,10 @@ export default function App() {
     try {
       const response = await fetch('/api/gemini/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
         body: JSON.stringify({
           messages: updatedMessages.map(m => ({ sender: m.sender, text: m.text })),
           codeContext: codeContext,
@@ -234,7 +254,21 @@ export default function App() {
       
       const finalHistoryList = [...history];
       finalHistoryList[itemIndex] = finalItem;
-      saveHistoryList(finalHistoryList);
+      setHistory(finalHistoryList);
+
+      // Sync assistant reply to server
+      try {
+        await fetch(`/api/history/${activeItem.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ chatHistory: [...updatedMessages, assistantMessage] })
+        });
+      } catch (err) {
+        console.error('Failed to sync assistant reply to server:', err);
+      }
       
       // If code was updated in the response, let's load it into the active codeContext too!
       if (responseData.code) {
@@ -262,25 +296,70 @@ export default function App() {
   // Active responses
   const [currentResponse, setCurrentResponse] = useState<ActionResponse | null>(null);
 
-  // Load History from localStorage on mount safely
-  useEffect(() => {
+  // --- SECURE AUTHENTICATION STATE ---
+  const [authToken, setAuthToken] = useState<string | null>(() => {
     try {
-      const stored = localStorage.getItem('ai_coder_histories_v1');
-      if (stored) {
-        setHistory(JSON.parse(stored));
-      }
+      return localStorage.getItem('nexus_ai_auth_token');
     } catch (e) {
-      console.warn("Storage reading error:", e);
+      return null;
     }
-  }, []);
+  });
 
-  // Save history helper
-  const saveHistoryList = (newList: HistoryItem[]) => {
-    setHistory(newList);
+  const [loggedInUser, setLoggedInUser] = useState<string | null>(() => {
     try {
-      localStorage.setItem('ai_coder_histories_v1', JSON.stringify(newList));
+      return localStorage.getItem('nexus_ai_auth_username');
     } catch (e) {
-      console.warn("Storage writing error:", e);
+      return null;
+    }
+  });
+
+  // Fetch histories from server when auth token is available
+  useEffect(() => {
+    if (authToken) {
+      const fetchHistory = async () => {
+        try {
+          const response = await fetch('/api/history', {
+            headers: {
+              'Authorization': `Bearer ${authToken}`
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setHistory(data);
+          } else if (response.status === 401) {
+            handleLogout();
+          }
+        } catch (err) {
+          console.error('Failed to fetch history:', err);
+        }
+      };
+      fetchHistory();
+    } else {
+      setHistory([]);
+      setSelectedHistoryId(null);
+      setCurrentResponse(null);
+    }
+  }, [authToken]);
+
+  const handleLoginSuccess = (token: string, username: string) => {
+    setAuthToken(token);
+    setLoggedInUser(username);
+    try {
+      localStorage.setItem('nexus_ai_auth_token', token);
+      localStorage.setItem('nexus_ai_auth_username', username);
+    } catch (e) {
+      console.warn('Failed to write to localStorage:', e);
+    }
+  };
+
+  const handleLogout = () => {
+    setAuthToken(null);
+    setLoggedInUser(null);
+    try {
+      localStorage.removeItem('nexus_ai_auth_token');
+      localStorage.removeItem('nexus_ai_auth_username');
+    } catch (e) {
+      console.warn('Failed to clear localStorage:', e);
     }
   };
 
@@ -320,20 +399,40 @@ export default function App() {
   };
 
   // Remove individual history log
-  const handleRemoveHistoryItem = (id: string) => {
+  const handleRemoveHistoryItem = async (id: string) => {
     const filtered = history.filter(item => item.id !== id);
-    saveHistoryList(filtered);
+    setHistory(filtered);
     if (selectedHistoryId === id) {
       setSelectedHistoryId(null);
       setCurrentResponse(null);
     }
+    try {
+      await fetch(`/api/history/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+    } catch (err) {
+      console.error('Failed to delete history item from server:', err);
+    }
   };
 
   // Clear all workspace histories
-  const handleClearHistory = () => {
-    saveHistoryList([]);
+  const handleClearHistory = async () => {
+    setHistory([]);
     setSelectedHistoryId(null);
     setCurrentResponse(null);
+    try {
+      await fetch('/api/history/clear', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+    } catch (err) {
+      console.error('Failed to clear history from server:', err);
+    }
   };
 
   // Submit Prompt task orchestration
@@ -351,7 +450,10 @@ export default function App() {
     try {
       const response = await fetch('/api/gemini/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
         body: JSON.stringify({
           prompt: prompt.trim(),
           mode: taskMode,
@@ -401,9 +503,23 @@ export default function App() {
         ]
       };
 
-      // Add to front of history list
-      saveHistoryList([newHistoryItem, ...history]);
+      // Add to front of history list state
+      setHistory(prev => [newHistoryItem, ...prev]);
       setSelectedHistoryId(newHistoryItem.id);
+
+      // Save item securely on server
+      try {
+        await fetch('/api/history', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ item: newHistoryItem })
+        });
+      } catch (err) {
+        console.error('Failed to sync history item to backend:', err);
+      }
 
       // Auto route tabs for seamless workflows
       if (taskMode === 'generate') {
@@ -472,6 +588,10 @@ export default function App() {
     setActiveTab('editor');
   };
 
+  if (!authToken) {
+    return <AuthGate onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#0F172A] text-slate-200 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
       
@@ -516,55 +636,55 @@ export default function App() {
 
       {/* MAIN APPRENTICE DASHBOARD */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
-        
-        {/* PRESET CHANNELS & CONTROLS (FULL WIDTH CONTAINER) */}
-        <div className="lg:col-span-12 font-sans">
-          <div className="bg-[#1E293B] border border-slate-700/80 rounded-xl p-4 shadow-xl">
-            <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400 block mb-2.5">
-              Quickstart Sandbox Prompts & Examples
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {PRESET_IDE_EXAMPLES.map((preset) => (
-                <button
-                  key={preset.id}
-                  onClick={() => handleLoadPreset(preset.id)}
-                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg border transition duration-150 text-left flex items-center space-x-2 cursor-pointer ${
-                    selectedPreset === preset.id
-                      ? 'bg-indigo-950/45 border-indigo-500 text-indigo-300 shadow-md shadow-indigo-500/15'
-                      : 'bg-[#0F172A] border-slate-700/60 text-slate-300 hover:text-white hover:border-slate-500'
-                  }`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                  <span>{preset.title}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
 
         {/* INPUT PANEL & WORKSPACE DIRECTORY (L-COLUMN: 5 COLS) */}
         <section className="lg:col-span-5 flex flex-col space-y-5 font-sans">
           
           {/* Core Command Center Container */}
           <div className="bg-[#1E293B] border border-slate-700/80 rounded-xl p-5 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-700/60 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-700/60 pb-3 gap-2">
               <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
                 <Terminal size={14} className="text-indigo-400" />
-                <span>Assistant Prompt Inputs</span>
+                <span>Prompt Inputs</span>
               </h3>
               
-              {/* Language Tag Dropdown */}
-              <div className="flex items-center space-x-1.5">
-                <label className="text-[11px] text-slate-500 font-bold uppercase">Lang:</label>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  className="bg-[#0F172A] text-slate-200 text-xs font-semibold px-2 py-1.5 rounded-md border border-slate-700 focus:outline-none focus:border-indigo-500 font-mono"
-                >
-                  {['Python', 'JavaScript', 'TypeScript', 'SQL', 'Java', 'C++', 'Go', 'HTML', 'CSS', 'Markdown'].map((l) => (
-                    <option key={l} value={l}>{l}</option>
-                  ))}
-                </select>
+              <div className="flex items-center space-x-2">
+                {/* Language Tag Dropdown */}
+                <div className="flex items-center space-x-1">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase">Lang:</label>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="bg-[#0F172A] text-slate-200 text-[11px] font-semibold px-1.5 py-1 rounded border border-slate-700/60 focus:outline-none focus:border-indigo-500 font-sans"
+                  >
+                    {['Python', 'JavaScript', 'TypeScript', 'SQL', 'Java', 'C++', 'Go', 'HTML', 'CSS', 'Markdown'].map((l) => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Templates Dropdown */}
+                <div className="flex items-center space-x-1">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase">Example:</label>
+                  <select
+                    value={selectedPreset || ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleLoadPreset(e.target.value);
+                      } else {
+                        setSelectedPreset(null);
+                      }
+                    }}
+                    className="bg-[#0F172A] text-slate-200 text-[11px] font-semibold px-1.5 py-1 rounded border border-slate-700/60 focus:outline-none focus:border-indigo-500 font-sans max-w-[110px]"
+                  >
+                    <option value="">-- None --</option>
+                    {PRESET_IDE_EXAMPLES.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -619,102 +739,46 @@ export default function App() {
               </div>
             )}
 
-            {/* 7 PRIMARY ACTION ENGINE GRID */}
-            <div className="pt-2 border-t border-neutral-800/80">
-              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider block mb-2.5">
-                Select AI Assistant Module Task
-              </span>
-                           <div className="grid grid-cols-2 gap-2.5 font-sans">
-                {/* Mode 1: Generate */}
-                <button
-                  disabled={isLoading}
-                  onClick={() => executeAssistantTask('generate')}
-                  className="flex items-center space-x-2 p-2.5 bg-[#0F172A] hover:bg-indigo-950/15 border border-slate-700/60 hover:border-indigo-500 rounded-lg text-slate-300 hover:text-indigo-400 transition cursor-pointer disabled:opacity-50 text-left"
+            {/* COMPACT DYNAMIC TASK SELECT & EXECUTE ACTION */}
+            <div className="pt-4 border-t border-slate-700/60 space-y-3 font-sans">
+              <div className="flex flex-col space-y-1.5">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  Select Assistant Task Mode
+                </label>
+                <select
+                  value={selectedMode}
+                  onChange={(e) => setSelectedMode(e.target.value as AssistantMode)}
+                  className="w-full bg-[#0F172A] text-slate-200 text-xs font-semibold px-3 py-2.5 rounded-lg border border-slate-700 focus:outline-none focus:border-indigo-500 font-sans cursor-pointer transition"
                 >
-                  <Code2 size={14} className="text-indigo-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold">Generate Code</div>
-                    <div className="text-[9px] text-slate-500 truncate">NL code generation</div>
-                  </div>
-                </button>
-
-                {/* Mode 2: Explain */}
-                <button
-                  disabled={isLoading}
-                  onClick={() => executeAssistantTask('explain')}
-                  className="flex items-center space-x-2 p-2.5 bg-[#0F172A] hover:bg-indigo-950/15 border border-slate-700/60 hover:border-indigo-500 rounded-lg text-slate-300 hover:text-indigo-400 transition cursor-pointer disabled:opacity-50 text-left"
-                >
-                  <FileText size={14} className="text-slate-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold">Explain Logic</div>
-                    <div className="text-[9px] text-slate-505 truncate">Line annotations</div>
-                  </div>
-                </button>
-
-                {/* Mode 3: Debug */}
-                <button
-                  disabled={isLoading}
-                  onClick={() => executeAssistantTask('debug')}
-                  className="flex items-center space-x-2 p-2.5 bg-[#0F172A] hover:bg-indigo-950/15 border border-slate-700/60 hover:border-indigo-500 rounded-lg text-slate-300 hover:text-indigo-400 transition cursor-pointer disabled:opacity-50 text-left"
-                >
-                  <AlertTriangle size={14} className="text-rose-450 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold">Debug Code</div>
-                    <div className="text-[9px] text-slate-505 truncate">Fix errors & compile</div>
-                  </div>
-                </button>
-
-                {/* Mode 4: Optimize */}
-                <button
-                  disabled={isLoading}
-                  onClick={() => executeAssistantTask('optimize')}
-                  className="flex items-center space-x-2 p-2.5 bg-[#0F172A] hover:bg-indigo-950/15 border border-slate-700/60 hover:border-indigo-500 rounded-lg text-slate-300 hover:text-indigo-400 transition cursor-pointer disabled:opacity-50 text-left"
-                >
-                  <Cpu size={14} className="text-indigo-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold">Optimize Code</div>
-                    <div className="text-[9px] text-slate-500 truncate">Speed & memory tune</div>
-                  </div>
-                </button>
-
-                {/* Mode 5: Document */}
-                <button
-                  disabled={isLoading}
-                  onClick={() => executeAssistantTask('document')}
-                  className="flex items-center space-x-2 p-2.5 bg-[#0F172A] hover:bg-indigo-950/15 border border-slate-700/60 hover:border-indigo-500 rounded-lg text-slate-300 hover:text-indigo-400 transition cursor-pointer disabled:opacity-50 text-left"
-                >
-                  <FileText size={14} className="text-indigo-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold">Document Creator</div>
-                    <div className="text-[9px] text-slate-500 truncate">README & docstrings</div>
-                  </div>
-                </button>
-
-                {/* Mode 6: Review */}
-                <button
-                  disabled={isLoading}
-                  onClick={() => executeAssistantTask('review')}
-                  className="flex items-center space-x-2 p-2.5 bg-[#0F172A] hover:bg-indigo-950/15 border border-slate-700/60 hover:border-indigo-500 rounded-lg text-slate-300 hover:text-indigo-400 transition cursor-pointer disabled:opacity-50 text-left"
-                >
-                  <ShieldCheck size={14} className="text-emerald-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold">Review Quality</div>
-                    <div className="text-[9px] text-slate-500 truncate">Audit nomenclature</div>
-                  </div>
-                </button>
-
-                {/* Mode 7: Concept */}
-                <button
-                  disabled={isLoading}
-                  onClick={() => executeAssistantTask('concept')}
-                  className="col-span-2 flex items-center justify-center space-x-2 p-3 bg-indigo-600 hover:bg-indigo-500 border border-indigo-600 rounded-lg text-white font-bold transition cursor-pointer disabled:opacity-50 text-center shadow-lg shadow-indigo-600/15"
-                >
-                  <Search size={15} />
-                  <span>Explore Programming Concept & Exercises</span>
-                </button>
+                  <option value="generate">✍️ Generate Code (NL generation)</option>
+                  <option value="explain">📖 Explain Logic (Line annotations)</option>
+                  <option value="debug">🐛 Debug Code (Fix errors & compile)</option>
+                  <option value="optimize">⚡ Optimize Code (Speed & memory tune)</option>
+                  <option value="document">📝 Document Creator (README & docstrings)</option>
+                  <option value="review">🔍 Review Quality (Audit nomenclature)</option>
+                  <option value="concept">🎓 Explore Programming Concept (Tutorials & exercises)</option>
+                </select>
               </div>
+
+              <button
+                disabled={isLoading}
+                onClick={() => executeAssistantTask(selectedMode)}
+                className="w-full flex items-center justify-center space-x-2 py-3 bg-indigo-600 hover:bg-indigo-550 text-white font-bold text-xs rounded-lg cursor-pointer transition shadow-lg shadow-indigo-600/10 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <span className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping"></span>
+                    <span>Processing task...</span>
+                  </span>
+                ) : (
+                  <>
+                    <Sparkles size={14} className="text-white animate-pulse" />
+                    <span>Run Workspace Task</span>
+                  </>
+                )}
+              </button>
             </div>
-          </div>
+            </div>
 
           {/* HISTORIES BAR MODULE */}
           <HistorySidebar
@@ -723,6 +787,8 @@ export default function App() {
             onSelect={handleSelectHistory}
             onClear={handleClearHistory}
             onRemoveItem={handleRemoveHistoryItem}
+            currentUser={loggedInUser || ''}
+            onLogout={handleLogout}
           />
 
         </section>
@@ -809,24 +875,12 @@ export default function App() {
               {!currentResponse ? (
                 <div className="p-12 bg-[#1E293B]/70 border border-dashed border-slate-700/60 rounded-2xl flex flex-col items-center justify-center text-center h-full">
                   <div className="w-12 h-12 rounded-2xl bg-[#0F172A] border border-slate-700 flex items-center justify-center mb-4">
-                    <Terminal size={20} className="text-slate-400" />
+                    <Terminal size={20} className="text-indigo-400" />
                   </div>
-                  <h4 className="text-sm font-bold text-slate-200">Ready for Execution</h4>
+                  <h4 className="text-sm font-bold text-slate-200">Workspace Ready</h4>
                   <p className="text-xs text-slate-400 max-w-[320px] mt-2 leading-relaxed font-sans">
-                    Select a Sandbox Preset example above, or type custom prompt instructions and click one of the 7 module buttons to kickstart!
+                    Type your instructions, choose a task mode, and click run to analyze, write, or refactor code.
                   </p>
-                  
-                  {/* Human Label Indicators for Anti-AI-slop */}
-                  <div className="mt-8 grid grid-cols-2 gap-3.5 max-w-sm w-full text-left font-sans">
-                    <div className="p-3 bg-[#0F172A] rounded-xl border border-slate-700/60">
-                      <span className="text-[10px] text-indigo-400 font-extrabold uppercase block mb-1">Durable Log History</span>
-                      <span className="text-[9.5px] text-slate-400 leading-normal block">Retains coding prompts, configurations, and scripts offline on device.</span>
-                    </div>
-                    <div className="p-3 bg-[#0F172A] rounded-xl border border-slate-700/60 font-sans">
-                      <span className="text-[10px] text-indigo-400 font-extrabold uppercase block mb-1">Dynamic Sandbox</span>
-                      <span className="text-[9.5px] text-slate-400 leading-normal block">Quickly edit, debug, and test Factorials recursively or SQL queries natively.</span>
-                    </div>
-                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1081,14 +1135,13 @@ export default function App() {
       </main>
 
       {/* COMPACT CLEAN FOOTER */}
-      <footer className="border-t border-slate-800/80 bg-[#1E293B]/70 py-5 mt-10 font-sans">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+      <footer className="border-t border-slate-800/80 bg-[#1E293B]/70 py-4 mt-8 font-sans">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-550">
           <div className="font-medium">
-            NexusAI coding platform | Fully client persistent via localStorage.
+            NexusAI workspace | Secure cloud synchronized history
           </div>
           <div className="flex space-x-4">
-            <span className="hover:text-slate-400 transition cursor-default">Security Isolation Active</span>
-            <span className="hover:text-slate-400 transition cursor-default">© NexusAI Workspace 2026</span>
+            <span className="hover:text-slate-400 transition cursor-default">© 2026 NexusAI</span>
           </div>
         </div>
       </footer>

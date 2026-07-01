@@ -8,11 +8,36 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import { 
+  registerUser, 
+  loginUser, 
+  verifyToken, 
+  getUserHistory, 
+  addUserHistoryItem, 
+  updateUserHistoryItem, 
+  removeUserHistoryItem, 
+  clearUserHistory 
+} from './src/usersDb';
 
 // Load variables from .env
 dotenv.config();
 
 const PORT = 3000;
+
+// Middleware to authenticate users and protect endpoints
+function authMiddleware(req: Request, res: Response, next: any) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Please log in first.' });
+  }
+  const token = authHeader.substring(7);
+  const username = verifyToken(token);
+  if (!username) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired session.' });
+  }
+  (req as any).username = username;
+  next();
+}
 
 // Lazy initialization pattern for Gemini SDK as specified in guidelines
 let aiInstance: GoogleGenAI | null = null;
@@ -94,9 +119,95 @@ async function startServer() {
   
   // Accept payload sizes up to 10MB
   app.use(express.json({ limit: '10mb' }));
+
+  // --- AUTHENTICATION ENDPOINTS ---
+  app.post('/api/auth/register', (req: Request, res: Response) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required.' });
+    }
+    const result = registerUser(username, password);
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+    return res.json({ message: result.message });
+  });
+
+  app.post('/api/auth/login', (req: Request, res: Response) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required.' });
+    }
+    const result = loginUser(username, password);
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+    return res.json({ token: result.token, message: result.message, username: username.toLowerCase().trim() });
+  });
+
+  app.get('/api/auth/me', authMiddleware, (req: Request, res: Response) => {
+    const username = (req as any).username;
+    return res.json({ username });
+  });
+
+  // --- ISOLATED USER-SCOPED HISTORY ENDPOINTS ---
+  app.get('/api/history', authMiddleware, (req: Request, res: Response) => {
+    const username = (req as any).username;
+    const history = getUserHistory(username);
+    return res.json(history);
+  });
+
+  app.post('/api/history', authMiddleware, (req: Request, res: Response) => {
+    const username = (req as any).username;
+    const { item } = req.body;
+    if (!item) {
+      return res.status(400).json({ error: 'History item is required.' });
+    }
+    const success = addUserHistoryItem(username, item);
+    if (!success) {
+      return res.status(500).json({ error: 'Failed to save history item.' });
+    }
+    return res.json({ success: true, message: 'History item saved successfully.' });
+  });
+
+  app.put('/api/history/:id', authMiddleware, (req: Request, res: Response) => {
+    const username = (req as any).username;
+    const itemId = req.params.id;
+    const { chatHistory } = req.body;
+    if (!chatHistory) {
+      return res.status(400).json({ error: 'chatHistory is required.' });
+    }
+    const success = updateUserHistoryItem(username, itemId, (item) => ({
+      ...item,
+      chatHistory
+    }));
+    if (!success) {
+      return res.status(404).json({ error: 'History item not found or update failed.' });
+    }
+    return res.json({ success: true, message: 'History item updated successfully.' });
+  });
+
+  app.delete('/api/history/clear', authMiddleware, (req: Request, res: Response) => {
+    const username = (req as any).username;
+    const success = clearUserHistory(username);
+    if (!success) {
+      return res.status(500).json({ error: 'Failed to clear history.' });
+    }
+    return res.json({ success: true, message: 'History cleared successfully.' });
+  });
+
+  app.delete('/api/history/:id', authMiddleware, (req: Request, res: Response) => {
+    const username = (req as any).username;
+    const itemId = req.params.id;
+    const success = removeUserHistoryItem(username, itemId);
+    if (!success) {
+      return res.status(404).json({ error: 'History item not found or deletion failed.' });
+    }
+    return res.json({ success: true, message: 'History item deleted successfully.' });
+  });
   
   // Handle server-side API endpoints FIRST before Vite middleware
-  app.post('/api/gemini/generate', async (req: Request, res: Response) => {
+  app.post('/api/gemini/generate', authMiddleware, async (req: Request, res: Response) => {
     try {
       const { prompt, mode, code, language } = req.body;
       
@@ -290,7 +401,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/gemini/chat', async (req: Request, res: Response) => {
+  app.post('/api/gemini/chat', authMiddleware, async (req: Request, res: Response) => {
     try {
       const { messages, codeContext, language } = req.body;
       
